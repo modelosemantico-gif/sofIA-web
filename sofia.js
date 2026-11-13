@@ -1,22 +1,20 @@
 // netlify/edge-functions/sofia.js
 // Proxy entre el sitio y el flujo de n8n. Guarda la clave del webhook en el servidor
 // (nunca en el navegador) y asigna la identidad del usuario según su código de acceso.
+//
+// Variables de entorno en Netlify (Site configuration > Environment variables):
+//   SOFIA_WEBHOOK_URL  https://TU-DOMINIO-N8N/webhook/sofia-chat
+//   SOFIA_API_KEY      la misma clave de la credencial "sofIA API key" (cabecera x-api-key)
+//   SOFIA_USERS        {"CLAVE-GERENCIA":{"userId":"gerencia","rol":"gerencia"},"CLAVE-SUP":{"userId":"supervisor1","rol":"supervisor"}}
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
     status,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
   });
 
 const leerUsuarios = () => {
-  try {
-    return JSON.parse(Netlify.env.get('SOFIA_USERS') || '{}');
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(Netlify.env.get('SOFIA_USERS') || '{}'); } catch { return {}; }
 };
 
 export default async (request) => {
@@ -49,46 +47,19 @@ export default async (request) => {
   const key = Netlify.env.get('SOFIA_API_KEY');
   if (!url || !key) return json({ error: 'configuracion' }, 500);
 
-  // 3) Llamada a n8n
+  // 3) Llamada a n8n (el encabezado de respuesta de una Edge Function admite hasta 40 s)
   try {
     const r = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'ngrok-skip-browser-warning': 'true',
-      },
-      body: JSON.stringify({
-        message,
-        chatInput: message,
-        sessionId,
-        userId: usuario.userId,
-        rol: usuario.rol || 'sin-rol',
-      }),
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key },
+      body: JSON.stringify({ message, sessionId, userId: usuario.userId, rol: usuario.rol || 'sin-rol' }),
       signal: AbortSignal.timeout(38000),
     });
-
     const data = await r.json().catch(() => null);
-    if (!r.ok || !data) return json({ error: 'upstream' }, 502);
-
-    // Extrae la respuesta sin importar cómo la nombre el nodo final de n8n
-    const textoRespuesta =
-      data.respuesta ||
-      data.output ||
-      data.text ||
-      (Array.isArray(data) && data[0]?.output) ||
-      (Array.isArray(data) && data[0]?.respuesta);
-
-    if (typeof textoRespuesta !== 'string' || !textoRespuesta.trim()) {
-      return json({ error: 'upstream' }, 502);
-    }
-
-    return json({ respuesta: textoRespuesta, estado: data.estado || 'ok' });
+    if (!r.ok || !data || typeof data.respuesta !== 'string') return json({ error: 'upstream' }, 502);
+    return json({ respuesta: data.respuesta, estado: data.estado || 'ok' });
   } catch (e) {
-    return json(
-      { error: e && e.name === 'TimeoutError' ? 'timeout' : 'upstream' },
-      e && e.name === 'TimeoutError' ? 504 : 502
-    );
+    return json({ error: e && e.name === 'TimeoutError' ? 'timeout' : 'upstream' }, e && e.name === 'TimeoutError' ? 504 : 502);
   }
 };
 
