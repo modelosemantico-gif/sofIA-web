@@ -6,7 +6,6 @@
 //   SOFIA_WEBHOOK_URL  https://TU-DOMINIO-N8N/webhook/sofia-chat
 //   SOFIA_API_KEY      la misma clave de la credencial "sofIA API key" (cabecera x-api-key)
 //   SOFIA_USERS        {"CLAVE-GERENCIA":{"userId":"gerencia","rol":"gerencia"},"CLAVE-SUP":{"userId":"supervisor1","rol":"supervisor"}}
-
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
     status,
