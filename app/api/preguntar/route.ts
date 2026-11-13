@@ -1,27 +1,94 @@
 import { NextResponse } from "next/server";
-import { responder } from "@/lib/sofia/proveedores";
 
 export const dynamic = "force-dynamic";
 
 const LARGO_MAXIMO = 300;
+const CODIGO_ACCESO = "sofia2026";
+const N8N_WEBHOOK_URL = "https://ngrok-free.dev";
+const N8N_API_KEY = "sofia2026";
 
-/** POST /api/preguntar  { "pregunta": "¿Por qué la OT-2611 se pasó en material?" } */
 export async function POST(request: Request) {
-  let cuerpo: { pregunta?: unknown };
+  let cuerpo: Record<string, unknown>;
   try {
     cuerpo = await request.json();
   } catch {
-    return NextResponse.json({ error: "El cuerpo debe ser JSON con el campo \"pregunta\"." }, { status: 400 });
+    return NextResponse.json(
+      { error: "El cuerpo debe ser JSON válido." },
+      { status: 400 }
+    );
   }
 
-  const pregunta = typeof cuerpo.pregunta === "string" ? cuerpo.pregunta.trim() : "";
+  // 1. Validar el código de acceso enviado por el widget
+  const codigoRecibido = typeof cuerpo.codigo === "string" ? cuerpo.codigo.trim() : "";
+  if (codigoRecibido !== CODIGO_ACCESO) {
+    return NextResponse.json(
+      { error: "Código de acceso inválido." },
+      { status: 401 }
+    );
+  }
+
+  // 2. Si el widget solo está comprobando el código (ping: true), respondemos OK (200)
+  if (cuerpo.ping === true) {
+    return NextResponse.json({ ok: true });
+  }
+
+  // 3. Validar la pregunta enviada en el campo "message" (o "pregunta")
+  const rawPregunta = cuerpo.message ?? cuerpo.pregunta;
+  const pregunta = typeof rawPregunta === "string" ? rawPregunta.trim() : "";
+
   if (!pregunta) {
-    return NextResponse.json({ error: "Escribe una pregunta para sofIA." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Escribe una pregunta para sofIA." },
+      { status: 400 }
+    );
   }
   if (pregunta.length > LARGO_MAXIMO) {
-    return NextResponse.json({ error: `La pregunta puede tener hasta ${LARGO_MAXIMO} caracteres.` }, { status: 400 });
+    return NextResponse.json(
+      { error: `La pregunta puede tener hasta ${LARGO_MAXIMO} caracteres.` },
+      { status: 400 }
+    );
   }
 
-  const respuesta = await responder(pregunta);
-  return NextResponse.json(respuesta);
+  // 4. Enviar la pregunta y el sessionId al webhook de n8n
+  try {
+    const resN8n = await fetch(N8N_WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": N8N_API_KEY,
+        "ngrok-skip-browser-warning": "true",
+      },
+      body: JSON.stringify({
+        pregunta,
+        chatInput: pregunta,
+        sessionId: typeof cuerpo.sessionId === "string" ? cuerpo.sessionId : "sesion-demo",
+      }),
+    });
+
+    if (!resN8n.ok) {
+      return NextResponse.json(
+        { error: `Error al comunicar con sofIA (${resN8n.status}).` },
+        { status: 502 }
+      );
+    }
+
+    const dataN8n = await resN8n.json();
+
+    // Extraer el texto sin importar cómo lo nombre n8n
+    const texto =
+      dataN8n.respuesta ||
+      dataN8n.output ||
+      dataN8n.text ||
+      (Array.isArray(dataN8n) && dataN8n[0]?.output) ||
+      "No se recibió respuesta del agente.";
+
+    // El widget espera exactamente el campo "respuesta" como string
+    return NextResponse.json({ respuesta: String(texto) });
+  } catch (error) {
+    console.error("Error conectando con n8n:", error);
+    return NextResponse.json(
+      { error: "No se pudo conectar con el servidor de sofIA." },
+      { status: 500 }
+    );
+  }
 }
