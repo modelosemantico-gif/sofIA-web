@@ -129,7 +129,7 @@ html[data-theme="light"] .sofia-ag{--bg:#ffffff;--panel:#f3f6f9;--borde:#d3dce5;
 
   function montar(host) {
     let sid = store.get('sofia_sid') || nuevoId(); store.set('sofia_sid', sid);
-    let codigo = store.get('sofia_cod') || '';
+    let codigo = 'sofia2026'; // código de acceso precargado
     let ocupado = false;
 
     host.innerHTML = `
@@ -230,7 +230,7 @@ html[data-theme="light"] .sofia-ag{--bg:#ffffff;--panel:#f3f6f9;--borde:#d3dce5;
     gcode.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); entrar(); } });
 
     bienvenida(); sugerencias();
-    if (!codigo) pedirCodigo();
+    codigo = 'sofia2026'; gate.hidden = true;
   }
 
   function estilos() {
